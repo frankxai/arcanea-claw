@@ -1,0 +1,42 @@
+services:
+  arcanea-claw:
+    build: .
+    container_name: arcanea-claw
+    restart: always
+    ports:
+      - "8080:8080"
+    volumes:
+      # Google Drive — accessed via WSL2 mount path (read-only)
+      - /mnt/g/My Drive/Arcanea:/data/source:ro
+      # Fallback: if G: not mounted, use Windows path via /mnt/c
+      # - /mnt/c/Users/frank/Google Drive/Arcanea:/data/source:ro
+      # Local staging on Linux FS (fast I/O)
+      - /home/frankx/arcanea-claw/staging:/data/staging
+      # Local processed output on Linux FS
+      - /home/frankx/arcanea-claw/processed:/data/processed
+      # Canon reference for validation
+      - /mnt/c/Users/frank/Arcanea/.arcanea/lore/CANON_LOCKED.md:/app/canon/CANON_LOCKED.md:ro
+    env_file:
+      - .env
+    environment:
+      - ARCANEA_CLAW_CONFIG=/app/config.yaml
+      - PYTHONUNBUFFERED=1
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2G
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    networks:
+      - claw-net
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  claw-net:
+    driver: bridge

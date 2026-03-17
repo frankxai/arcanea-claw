@@ -1,0 +1,97 @@
+{
+  "name": "ArcaneaClaw",
+  "version": "0.1.0",
+  "description": "AI-powered media processing pipeline for creative world-building. Scans, classifies, scores, and deploys creative media with world-building intelligence.",
+  "homepage": "https://arcanea.ai/claw",
+  "repository": "https://github.com/frankxai/arcanea-claw",
+  "author": "frankxai",
+  "license": "MIT",
+  "mcpServers": {
+    "arcanea-claw": {
+      "command": "node",
+      "args": ["mcp-server/dist/index.js"],
+      "env": {
+        "CLAW_DIR": "${CLAW_DIR:-/data}",
+        "MANIFEST_PATH": "${MANIFEST_PATH:-/data/manifest.json}"
+      },
+      "description": "MCP tools for the ArcaneaClaw media pipeline: scan, classify, score, approve, reject, process, and query creative assets.",
+      "tools": [
+        "claw_status",
+        "claw_scan",
+        "claw_inbox",
+        "claw_approve",
+        "claw_reject",
+        "claw_stats",
+        "claw_process",
+        "claw_heroes",
+        "claw_classify",
+        "claw_pipeline",
+        "__openclaw_info"
+      ]
+    }
+  },
+  "skills": [
+    {
+      "name": "media-pipeline",
+      "description": "Full media processing pipeline: scan, classify, deduplicate, process. Runs all stages in sequence and returns a summary of new files found, classifications applied, duplicates removed, and assets processed.",
+      "trigger": "scheduled",
+      "interval": 900,
+      "mcpTool": "claw_pipeline"
+    },
+    {
+      "name": "media-scan",
+      "description": "Scan configured directories for new media files (images, video, audio). Adds discovered files to the manifest as pending assets.",
+      "trigger": "scheduled",
+      "interval": 300,
+      "mcpTool": "claw_scan"
+    },
+    {
+      "name": "media-classify",
+      "description": "Classify untagged assets by guardian, element, and content type using filename heuristics and AI vision models.",
+      "trigger": "on-demand",
+      "mcpTool": "claw_classify"
+    },
+    {
+      "name": "taste-score",
+      "description": "AI-powered aesthetic quality scoring (0-100) with five dimensions: composition, color harmony, technical quality, emotional impact, and brand alignment. Uses Gemini Vision.",
+      "trigger": "on-demand",
+      "requires": ["GEMINI_API_KEY"]
+    },
+    {
+      "name": "social-prep",
+      "description": "Generate platform-optimized image variants (1:1, 9:16, 16:9, LinkedIn wide) with AI-generated captions and hashtags for Instagram, Twitter, TikTok, and LinkedIn.",
+      "trigger": "on-demand",
+      "requires": ["GEMINI_API_KEY"]
+    },
+    {
+      "name": "media-process",
+      "description": "Process approved assets: resize to configured variants (hero 1920x1080, gallery 1200x800, social 1080x1080, thumbnail 320x320), convert to WebP, optimize quality.",
+      "trigger": "on-demand",
+      "mcpTool": "claw_process"
+    },
+    {
+      "name": "media-upload",
+      "description": "Upload processed assets to cloud storage. Hero-tier (score 80+) to Vercel Blob, gallery-tier (60+) to Supabase Storage.",
+      "trigger": "on-demand",
+      "requires": ["BLOB_READ_WRITE_TOKEN", "SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]
+    },
+    {
+      "name": "dashboard",
+      "description": "View pipeline dashboard: guardian coverage, element distribution, tier breakdown, score statistics, and recent activity.",
+      "trigger": "on-demand",
+      "mcpTool": "claw_stats"
+    }
+  ],
+  "memory": {
+    "path": "/data/memory",
+    "format": "markdown",
+    "retention": "permanent"
+  },
+  "healthCheck": {
+    "tool": "claw_status",
+    "interval": 60,
+    "expect": {
+      "daemon.running": true
+    }
+  }
+}

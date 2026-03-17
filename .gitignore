@@ -1,0 +1,14 @@
+node_modules/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+dist/
+processed/
+staging/
+logs/
+manifest.json
+deep-scan-results.json
+*.egg-info/
+.pytest_cache/

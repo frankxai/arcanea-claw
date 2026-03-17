@@ -1,0 +1,66 @@
+{
+  "name": "@arcanea/claw",
+  "display_name": "ArcaneaClaw -- Creator Media Engine",
+  "description": "AI-powered media pipeline: scan, classify, score, process, upload, social. 8 skills, 11 MCP tools. Works standalone, with OpenClaw, or as MCP tools for Claude Code.",
+  "long_description": "Complete media processing pipeline for creative world-builders. Scans directories for images/video/audio, classifies by character and element using heuristics and AI vision, scores aesthetic quality (0-100) across 5 dimensions with Gemini Vision, resizes to 6 platform-optimized variants, uploads hero-tier assets to Vercel Blob and gallery-tier to Supabase Storage, and generates social media posts with AI captions and hashtags.",
+  "category": "media",
+  "subcategory": "image-processing",
+  "author": {
+    "name": "frankxai",
+    "url": "https://arcanea.ai",
+    "avatar": "https://arcanea.ai/og-image.png",
+    "github": "https://github.com/frankxai"
+  },
+  "version": "0.1.0",
+  "license": "MIT",
+  "homepage": "https://arcanea.ai/claw",
+  "repository": "https://github.com/frankxai/arcanea-claw",
+  "bugs": "https://github.com/frankxai/arcanea-claw/issues",
+  "keywords": [
+    "media",
+    "ai",
+    "image-processing",
+    "creative",
+    "world-building",
+    "social-media",
+    "publishing",
+    "gemini-vision",
+    "aesthetic-scoring",
+    "content-automation",
+    "mcp",
+    "supabase",
+    "vercel-blob"
+  ],
+  "platforms": ["openclaw", "nanoclaw", "claude-code", "standalone"],
+  "requirements": {
+    "python": ">=3.11",
+    "node": ">=18",
+    "services": {
+      "required": [],
+      "optional": ["supabase", "gemini", "vercel-blob"]
+    }
+  },
+  "skills": [
+    "media-scan",
+    "media-classify",
+    "taste-score",
+    "media-dedup",
+    "media-process",
+    "media-upload",
+    "social-prep",
+    "notify"
+  ],
+  "mcp": {
+    "server": "mcp-server/dist/index.js",
+    "tools": 11,
+    "transport": "stdio"
+  },
+  "pricing": "free",
+  "screenshots": [],
+  "install_count": 0,
+  "rating": null,
+  "badges": ["mcp-native", "ai-powered", "multi-platform"],
+  "changelog": {
+    "0.1.0": "Initial release: 8 skills, 11 MCP tools, OpenClaw/NanoClaw/Claude Code support"
+  }
+}

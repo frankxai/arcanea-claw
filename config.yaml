@@ -1,0 +1,74 @@
+arcanea_claw:
+  agent_id: "arcanea-claw-primary"
+  agent_name: "ArcaneaClaw Primary Engine"
+
+  heartbeat:
+    interval_seconds: 300        # 5 min status ping
+    pipeline_interval_seconds: 900  # 15 min full pipeline
+
+  scan:
+    paths:
+      - /data/source               # G:\Drive mount
+    extensions:
+      - .jpg
+      - .jpeg
+      - .png
+      - .webp
+      - .gif
+      - .mp4
+      - .mov
+      - .mp3
+      - .wav
+      - .flac
+    ignore_patterns:
+      - ".*"
+      - "__pycache__"
+      - "node_modules"
+      - ".git"
+
+  process:
+    staging_dir: /data/staging
+    output_dir: /data/processed
+    webp_quality: 85
+    max_dimension: 2400
+    thumbnail_size: 320
+    size_variants:
+      hero: [1920, 1080]          # 16:9
+      gallery: [1200, 800]        # 3:2
+      social_square: [1080, 1080] # 1:1
+      social_story: [1080, 1920]  # 9:16
+      social_wide: [1200, 628]    # ~1.91:1 LinkedIn
+      thumbnail: [320, 320]       # 1:1
+
+  upload:
+    hero_threshold: 80             # TASTE score for Vercel Blob
+    gallery_threshold: 60          # TASTE score for Supabase Storage
+
+  classify:
+    model: "gemini-2.0-flash"
+    guardians:
+      - Lyssandria
+      - Leyla
+      - Draconia
+      - Maylinn
+      - Alera
+      - Lyria
+      - Aiyami
+      - Elara
+      - Ino
+      - Shinkami
+    elements:
+      - Earth
+      - Water
+      - Fire
+      - Wind
+      - Void
+
+  notify:
+    enabled: true
+    channels:
+      - type: webhook
+        url: "${NOTIFY_WEBHOOK_URL}"
+
+  canon:
+    reference: "/app/canon/CANON_LOCKED.md"

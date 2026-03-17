@@ -1,0 +1,63 @@
+{
+  "name": "@arcanea/claw",
+  "version": "0.1.0",
+  "description": "AI-powered media processing engine with TASTE scoring, classification, and social content generation. 8-skill pipeline for creative world-builders.",
+  "license": "MIT",
+  "author": {
+    "name": "frankxai",
+    "url": "https://arcanea.ai"
+  },
+  "homepage": "https://arcanea.ai",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/frankxai/arcanea-claw.git"
+  },
+  "bugs": {
+    "url": "https://github.com/frankxai/arcanea-claw/issues"
+  },
+  "keywords": [
+    "media-pipeline",
+    "image-processing",
+    "ai-classification",
+    "aesthetic-scoring",
+    "taste-score",
+    "gemini-vision",
+    "social-media",
+    "content-automation",
+    "world-building",
+    "creative-tools",
+    "openclaw",
+    "clawhub",
+    "nanoclaw",
+    "supabase",
+    "vercel-blob"
+  ],
+  "bin": {
+    "arcanea-claw": "./engine/cli.js"
+  },
+  "main": "engine/index.js",
+  "files": [
+    "engine/",
+    "skills/",
+    "skillpacks/",
+    "config.yaml",
+    "requirements.txt",
+    "Dockerfile",
+    "docker-compose.yml",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "start": "node engine/cli.js start",
+    "health": "node engine/cli.js health",
+    "score": "node engine/cli.js score",
+    "status": "node engine/cli.js status"
+  },
+  "dependencies": {
+    "@vercel/blob": "^0.27.0",
+    "@supabase/supabase-js": "^2.45.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

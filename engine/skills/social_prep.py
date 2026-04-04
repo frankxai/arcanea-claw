@@ -143,16 +143,15 @@ def run(
                 if result:
                     caption_data = result
 
+            caption_text = caption_data.get("caption", f"{guardian} — {element} Guardian of Arcanea")
+            hashtag_list = caption_data.get("hashtags", ["Arcanea", "FantasyArt", guardian])
+
             queue_entry = {
-                "asset_id": asset_id,
                 "platform": platform,
-                "image_path": image_path,
-                "storage_url": storage_url,
-                "caption": caption_data.get("caption", f"{guardian} — {element} Guardian of Arcanea"),
-                "hashtags": caption_data.get("hashtags", ["Arcanea", "FantasyArt", guardian]),
-                "aspect_ratio": platform_cfg["aspect"],
-                "guardian": guardian,
-                "element": element,
+                "content_text": caption_text,
+                "media_ids": [asset_id],
+                "media_urls": [storage_url] if storage_url else [],
+                "hashtags": hashtag_list,
                 "status": "draft",
             }
 

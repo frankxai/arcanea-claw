@@ -41,10 +41,10 @@ def register_agent(agent_id: str, agent_name: str, metadata: dict | None = None)
     payload = {
         "agent_id": agent_id,
         "agent_name": agent_name,
+        "agent_type": "arcanea-claw",
         "status": "online",
-        "started_at": now,
         "last_heartbeat": now,
-        "metadata": metadata or {},
+        "config": metadata or {},
     }
     result = (
         client.table("agent_registry")

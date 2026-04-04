@@ -10,7 +10,9 @@ Also serves an HTTP health endpoint on port 8080.
 """
 
 import asyncio
+import functools
 import importlib
+import inspect
 import logging
 import os
 import signal
@@ -42,6 +44,35 @@ logging.basicConfig(
 logger = logging.getLogger("arcanea-claw")
 
 # ---------------------------------------------------------------------------
+# Gemini model (lazy init)
+# ---------------------------------------------------------------------------
+
+_gemini_model: Any = None
+
+
+def get_gemini_model(config: dict) -> Any:
+    """Initialize and return a Gemini GenerativeModel, or None if unavailable."""
+    global _gemini_model
+    if _gemini_model is not None:
+        return _gemini_model
+
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        logger.warning("GEMINI_API_KEY not set — AI classification/scoring disabled")
+        return None
+
+    try:
+        import google.generativeai as genai
+        genai.configure(api_key=api_key)
+        model_name = config.get("classify", {}).get("model", "gemini-2.0-flash")
+        _gemini_model = genai.GenerativeModel(model_name)
+        logger.info("Gemini model initialized: %s", model_name)
+        return _gemini_model
+    except Exception as exc:
+        logger.error("Failed to initialize Gemini: %s", exc)
+        return None
+
+# ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
@@ -71,12 +102,18 @@ SKILL_CHAIN = [
 ]
 
 
-async def run_skill(skill_name: str, config: dict) -> dict[str, Any]:
+async def run_skill(
+    skill_name: str,
+    config: dict,
+    supabase: Any,
+    gemini_model: Any = None,
+    pipeline_stats: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """
     Import and execute a single skill module.
 
-    Each skill lives at engine/skills/<name>.py and exposes an async run(config) -> dict.
-    If the skill module doesn't exist yet, log a warning and skip.
+    Each skill lives at engine/skills/<name>.py and exposes a run() function.
+    Skills are synchronous — we run them in a thread to avoid blocking the event loop.
     """
     module_path = f"engine.skills.{skill_name}"
     try:
@@ -89,9 +126,22 @@ async def run_skill(skill_name: str, config: dict) -> dict[str, Any]:
         logger.warning("Skill %s has no run() function — skipping", skill_name)
         return {"skill": skill_name, "status": "skipped", "reason": "no_run_function"}
 
+    # Build kwargs based on what the skill's run() accepts
+    sig = inspect.signature(mod.run)
+    kwargs: dict[str, Any] = {"config": config}
+    if "supabase" in sig.parameters:
+        kwargs["supabase"] = supabase
+    if "gemini_model" in sig.parameters:
+        kwargs["gemini_model"] = gemini_model
+    if "pipeline_stats" in sig.parameters:
+        kwargs["pipeline_stats"] = pipeline_stats
+
     start = time.monotonic()
     try:
-        result = await mod.run(config)
+        # Skills are sync — run in thread pool to keep event loop responsive
+        result = await asyncio.get_running_loop().run_in_executor(
+            None, functools.partial(mod.run, **kwargs)
+        )
         elapsed = round(time.monotonic() - start, 2)
         logger.info("Skill %s completed in %.2fs", skill_name, elapsed)
         return {
@@ -111,12 +161,25 @@ async def run_skill(skill_name: str, config: dict) -> dict[str, Any]:
         }
 
 
-async def run_pipeline(config: dict) -> list[dict]:
-    """Execute the full skill chain sequentially, collecting results."""
+async def run_pipeline(config: dict, supabase: Any, gemini_model: Any = None) -> list[dict]:
+    """Execute the full skill chain sequentially, collecting results.
+
+    Aggregates stats from each skill and passes them to the notify skill.
+    """
     results: list[dict] = []
+    aggregated_stats: dict[str, Any] = {}
+
     for skill_name in SKILL_CHAIN:
-        result = await run_skill(skill_name, config)
+        result = await run_skill(
+            skill_name, config, supabase, gemini_model,
+            pipeline_stats=aggregated_stats,
+        )
         results.append(result)
+
+        # Merge skill results into aggregated stats for notify
+        if result.get("status") == "ok" and isinstance(result.get("result"), dict):
+            aggregated_stats.update(result["result"])
+
     return results
 
 
@@ -175,7 +238,12 @@ async def heartbeat_loop(config: dict, shutdown_event: asyncio.Event) -> None:
             pass  # interval elapsed, loop again
 
 
-async def pipeline_loop(config: dict, shutdown_event: asyncio.Event) -> None:
+async def pipeline_loop(
+    config: dict,
+    shutdown_event: asyncio.Event,
+    supabase: Any,
+    gemini_model: Any = None,
+) -> None:
     """Run the full pipeline at configured interval."""
     agent_id = config["agent_id"]
     interval = config.get("heartbeat", {}).get("pipeline_interval_seconds", 900)
@@ -184,7 +252,7 @@ async def pipeline_loop(config: dict, shutdown_event: asyncio.Event) -> None:
         logger.info("--- Pipeline run #%d starting ---", _daemon_state["pipeline_runs"] + 1)
         db.update_agent_status(agent_id, "processing")
 
-        results = await run_pipeline(config)
+        results = await run_pipeline(config, supabase, gemini_model)
 
         _daemon_state["pipeline_runs"] += 1
         _daemon_state["last_pipeline_at"] = time.time()
@@ -219,9 +287,13 @@ async def main() -> None:
 
     logger.info("ArcaneaClaw starting — agent=%s", agent_id)
 
+    # Initialize shared dependencies
+    supabase = db.get_client()
+    gemini_model = get_gemini_model(config)
+
     # Register in Supabase
     try:
-        db.register_agent(agent_id, agent_name, metadata={"version": "0.1.0"})
+        db.register_agent(agent_id, agent_name, metadata={"version": "0.2.0"})
     except Exception as exc:
         logger.error("Failed to register agent (continuing anyway): %s", exc)
 
@@ -237,7 +309,11 @@ async def main() -> None:
         shutdown_event.set()
 
     for sig in (signal.SIGTERM, signal.SIGINT):
-        loop.add_signal_handler(sig, _signal_handler)
+        try:
+            loop.add_signal_handler(sig, _signal_handler)
+        except NotImplementedError:
+            # Windows doesn't support add_signal_handler — use signal.signal fallback
+            signal.signal(sig, lambda s, f: _signal_handler())
 
     # Start health server
     health_runner = await start_health_server(port=8080)
@@ -246,7 +322,7 @@ async def main() -> None:
     try:
         await asyncio.gather(
             heartbeat_loop(config, shutdown_event),
-            pipeline_loop(config, shutdown_event),
+            pipeline_loop(config, shutdown_event, supabase, gemini_model),
         )
     finally:
         # Graceful teardown

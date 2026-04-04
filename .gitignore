@@ -12,3 +12,5 @@ manifest.json
 deep-scan-results.json
 *.egg-info/
 .pytest_cache/
+demo-media/
+data/

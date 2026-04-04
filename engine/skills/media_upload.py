@@ -163,7 +163,7 @@ def run(config: dict[str, Any], supabase: Any) -> dict[str, Any]:
                 "storage_url": storage_url,
                 "thumbnail_url": thumbnail_url,
                 "storage_tier": tier,
-                "status": "uploaded",
+                "status": "approved",
             }).eq("id", asset_id).execute()
             uploaded += 1
             logger.debug("Uploaded %s to %s (%s)", upload_file, tier, storage_url[:80])

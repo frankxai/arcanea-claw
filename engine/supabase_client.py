@@ -61,7 +61,7 @@ def heartbeat(agent_id: str, stats: dict | None = None) -> None:
     now = datetime.now(timezone.utc).isoformat()
     payload: dict[str, Any] = {"last_heartbeat": now}
     if stats:
-        payload["metadata"] = stats
+        payload["config"] = stats
     client.table("agent_registry").update(payload).eq("agent_id", agent_id).execute()
     logger.debug("Heartbeat sent: %s", agent_id)
 

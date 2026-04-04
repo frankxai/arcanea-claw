@@ -468,7 +468,7 @@ async def pipeline_loop(
 
     while not shutdown_event.is_set():
         run_num = _daemon_state["pipeline_runs"] + 1
-        logger.info("━━━ Pipeline run #%d ━━━", run_num)
+        logger.info("--- Pipeline run #%d ---", run_num)
 
         try:
             db.update_agent_status(agent_id, "processing")
@@ -504,11 +504,8 @@ async def main() -> None:
     agent_name = config.get("agent_name", agent_id)
     skill_chain = config.get("skill_chain", DEFAULT_CHAINS.get(CLAW_PROFILE, []))
 
-    logger.info("╔═══════════════════════════════════════════╗")
-    logger.info("║  ArcaneaClaw %s — %s", VERSION.ljust(6), CLAW_PROFILE.upper().ljust(23) + "║")
-    logger.info("║  Agent: %-33s ║", agent_id)
-    logger.info("║  Skills: %-32s ║", f"{len(skill_chain)} in chain")
-    logger.info("╚═══════════════════════════════════════════╝")
+    logger.info("=== ArcaneaClaw %s | %s ===", VERSION, CLAW_PROFILE.upper())
+    logger.info("Agent: %s | Skills: %d in chain", agent_id, len(skill_chain))
 
     # Initialize shared dependencies
     supabase = db.get_client()

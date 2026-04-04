@@ -72,6 +72,13 @@ def setup_logging(level: str = "INFO") -> None:
     handler = logging.StreamHandler(sys.stdout)
     handler.setLevel(log_level)
 
+    # Fix Windows cp1252 encoding crashes
+    if hasattr(handler.stream, "reconfigure"):
+        try:
+            handler.stream.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     if log_format == "json":
         handler.setFormatter(JSONFormatter())
     else:

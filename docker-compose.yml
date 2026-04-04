@@ -1,41 +1,91 @@
+# ArcaneaClaw Fleet — All 5 engines from one image
+#
+# Usage:
+#   docker compose up                    # all 5 claws
+#   docker compose up claw-media         # just media
+#   docker compose up claw-forge         # just forge
+#   docker compose --profile full up     # all claws + monitoring
+
+x-claw-common: &claw-common
+  build: .
+  env_file: .env
+  restart: unless-stopped
+  environment:
+    PYTHONUNBUFFERED: "1"
+    LOG_FORMAT: json
+  volumes:
+    - claw-data:/data
+  networks:
+    - claw-net
+  deploy:
+    resources:
+      limits:
+        cpus: "2"
+        memory: 2G
+      reservations:
+        cpus: "0.5"
+        memory: 512M
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
 services:
-  arcanea-claw:
-    build: .
-    container_name: arcanea-claw
-    restart: always
+  # ── The Five Claws ──────────────────────────────────────────
+
+  claw-media:
+    <<: *claw-common
+    container_name: claw-media
     ports:
-      - "8080:8080"
-    volumes:
-      # Google Drive — accessed via WSL2 mount path (read-only)
-      - /mnt/g/My Drive/Arcanea:/data/source:ro
-      # Fallback: if G: not mounted, use Windows path via /mnt/c
-      # - /mnt/c/Users/frank/Google Drive/Arcanea:/data/source:ro
-      # Local staging on Linux FS (fast I/O)
-      - /home/frankx/arcanea-claw/staging:/data/staging
-      # Local processed output on Linux FS
-      - /home/frankx/arcanea-claw/processed:/data/processed
-      # Canon reference for validation
-      - /mnt/c/Users/frank/Arcanea/.arcanea/lore/CANON_LOCKED.md:/app/canon/CANON_LOCKED.md:ro
-    env_file:
-      - .env
+      - "8081:8080"
     environment:
-      - ARCANEA_CLAW_CONFIG=/app/config.yaml
-      - PYTHONUNBUFFERED=1
-    deploy:
-      resources:
-        limits:
-          cpus: "2"
-          memory: 2G
-        reservations:
-          cpus: "0.5"
-          memory: 512M
-    networks:
-      - claw-net
-    logging:
-      driver: json-file
-      options:
-        max-size: "10m"
-        max-file: "3"
+      CLAW_PROFILE: media
+      PIPELINE_INTERVAL: "900"
+    volumes:
+      - claw-data:/data
+      # Mount local source dir for scanning
+      - ./demo-media:/data/source:ro
+
+  claw-forge:
+    <<: *claw-common
+    container_name: claw-forge
+    ports:
+      - "8082:8080"
+    environment:
+      CLAW_PROFILE: forge
+      PIPELINE_INTERVAL: "0"  # on-demand — use POST /trigger
+
+  claw-herald:
+    <<: *claw-common
+    container_name: claw-herald
+    ports:
+      - "8083:8080"
+    environment:
+      CLAW_PROFILE: herald
+      PIPELINE_INTERVAL: "1800"  # 30 min
+
+  claw-scout:
+    <<: *claw-common
+    container_name: claw-scout
+    ports:
+      - "8084:8080"
+    environment:
+      CLAW_PROFILE: scout
+      PIPELINE_INTERVAL: "3600"  # 1 hour
+
+  claw-scribe:
+    <<: *claw-common
+    container_name: claw-scribe
+    ports:
+      - "8085:8080"
+    environment:
+      CLAW_PROFILE: scribe
+      PIPELINE_INTERVAL: "86400"  # daily
+
+volumes:
+  claw-data:
+    driver: local
 
 networks:
   claw-net:

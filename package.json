@@ -1,7 +1,7 @@
 {
   "name": "@arcanea/claw",
-  "version": "0.1.0",
-  "description": "AI-powered media processing engine with TASTE scoring, classification, and social content generation. 8-skill pipeline for creative world-builders.",
+  "version": "0.3.0",
+  "description": "The Claw Fleet — 5 specialized AI engines (Media, Forge, Herald, Scout, Scribe) with 33 skills, cross-claw event pipeline, and fleet orchestration.",
   "license": "MIT",
   "author": {
     "name": "frankxai",
@@ -38,6 +38,7 @@
   "main": "engine/index.js",
   "files": [
     "engine/",
+    "profiles/",
     "skills/",
     "skillpacks/",
     "config.yaml",

@@ -1,23 +1,31 @@
 """
-ArcaneaClaw Daemon — 24/7 media processing engine.
+ArcaneaClaw Daemon — The Claw Fleet Engine.
 
-Runs two concurrent loops:
-  1. Heartbeat — pings Supabase every N seconds to prove liveness
-  2. Pipeline  — runs the full skill chain every M seconds:
-     scan -> classify -> dedup -> process -> score -> upload -> social_prep -> notify
+One daemon, many profiles. Runs any claw type (Media, Forge, Herald, Scout, Scribe)
+based on CLAW_PROFILE env var and config-driven skill chains.
 
-Also serves an HTTP health endpoint on port 8080.
+Three concurrent loops:
+  1. Heartbeat — pings Supabase to prove liveness
+  2. Pipeline  — runs the skill chain at configured interval
+  3. Events    — consumes cross-claw events and triggers actions
+
+HTTP endpoints:
+  GET /health  — daemon state + circuit breaker status
+  GET /metrics — pipeline timing, skill stats, error rates
 """
+
+from __future__ import annotations
 
 import asyncio
 import functools
 import importlib
 import inspect
-import logging
+import json
 import os
 import signal
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -29,25 +37,40 @@ from dotenv import load_dotenv
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from engine import supabase_client as db
+from engine.logging_config import setup_logging
+from engine.resilience import (
+    CircuitBreaker,
+    RateLimiter,
+    all_circuit_stats,
+    all_limiter_stats,
+    get_circuit,
+    get_limiter,
+)
 
 load_dotenv()
 
 # ---------------------------------------------------------------------------
-# Logging
+# Logging — structured JSON for cloud, human-readable for local
 # ---------------------------------------------------------------------------
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+import logging
+
+setup_logging()
 logger = logging.getLogger("arcanea-claw")
 
 # ---------------------------------------------------------------------------
-# Gemini model (lazy init)
+# Version
+# ---------------------------------------------------------------------------
+
+VERSION = "0.3.0"
+
+# ---------------------------------------------------------------------------
+# Gemini model (lazy init with circuit breaker)
 # ---------------------------------------------------------------------------
 
 _gemini_model: Any = None
+_gemini_circuit = get_circuit("gemini", failure_threshold=3, reset_timeout=120)
+_gemini_limiter = get_limiter("gemini", rate=15, per=60)  # 15 RPM
 
 
 def get_gemini_model(config: dict) -> Any:
@@ -72,55 +95,63 @@ def get_gemini_model(config: dict) -> Any:
         logger.error("Failed to initialize Gemini: %s", exc)
         return None
 
+
 # ---------------------------------------------------------------------------
-# Config
+# Config — profile-based
 # ---------------------------------------------------------------------------
 
 CLAW_PROFILE = os.environ.get("CLAW_PROFILE", "media")
-CONFIG_PATH = os.environ.get(
-    "ARCANEA_CLAW_CONFIG",
-    f"/app/profiles/{CLAW_PROFILE}.yaml" if Path(f"/app/profiles/{CLAW_PROFILE}.yaml").exists()
-    else "/app/config.yaml",
-)
 
 
 def load_config() -> dict[str, Any]:
-    """Load config from profile or legacy config.yaml."""
-    # Try profile-based config first, fall back to legacy
-    profile_path = Path(CONFIG_PATH)
-    if not profile_path.exists():
-        # Try local profiles directory
-        local_profile = Path(__file__).resolve().parent.parent / "profiles" / f"{CLAW_PROFILE}.yaml"
-        if local_profile.exists():
-            profile_path = local_profile
-        else:
-            # Final fallback: config.yaml in cwd or /app
-            for fallback in [Path("config.yaml"), Path("config.local.yaml"), Path("/app/config.yaml")]:
-                if fallback.exists():
-                    profile_path = fallback
-                    break
+    """Load config from profile YAML or env override."""
+    # Priority: ARCANEA_CLAW_CONFIG env > profiles/<profile>.yaml > config.local.yaml > config.yaml
+    explicit = os.environ.get("ARCANEA_CLAW_CONFIG")
+    candidates = []
 
-    logger.info("Loading config from: %s (profile=%s)", profile_path, CLAW_PROFILE)
-    with open(profile_path, "r") as f:
+    if explicit:
+        candidates.append(Path(explicit))
+
+    base_dir = Path(__file__).resolve().parent.parent
+    candidates.extend([
+        base_dir / "profiles" / f"{CLAW_PROFILE}.yaml",
+        Path(f"/app/profiles/{CLAW_PROFILE}.yaml"),
+        base_dir / "config.local.yaml",
+        base_dir / "config.yaml",
+        Path("/app/config.yaml"),
+    ])
+
+    config_path = None
+    for candidate in candidates:
+        if candidate.exists():
+            config_path = candidate
+            break
+
+    if config_path is None:
+        raise FileNotFoundError(f"No config found for profile '{CLAW_PROFILE}'. Tried: {[str(c) for c in candidates]}")
+
+    logger.info("Config loaded: %s (profile=%s)", config_path, CLAW_PROFILE)
+    with open(config_path, "r") as f:
         raw = yaml.safe_load(f)
     return raw.get("arcanea_claw", raw)
 
 
 # ---------------------------------------------------------------------------
-# Skill chain — each skill is a module in /app/skills/ with a run() function
+# Default skill chains (per profile)
 # ---------------------------------------------------------------------------
 
-DEFAULT_SKILL_CHAIN = [
-    "media_scan",
-    "media_classify",
-    "media_dedup",
-    "media_process",
-    "taste_score",
-    "media_upload",
-    "social_prep",
-    "notify",
-]
+DEFAULT_CHAINS: dict[str, list[str]] = {
+    "media": ["media_scan", "media_classify", "media_dedup", "media_process", "taste_score", "media_upload", "social_prep", "notify"],
+    "forge": ["nft_art_generate", "nft_trait_compose", "nft_metadata_build", "nft_ipfs_pin", "nft_mint", "nft_marketplace_list", "nft_rarity_score", "notify"],
+    "herald": ["herald_trend_scan", "herald_content_draft", "herald_thread_compose", "herald_schedule", "herald_cross_post", "herald_engage", "herald_analytics", "notify"],
+    "scout": ["scout_market_scan", "scout_competitor_track", "scout_alpha_detect", "scout_sentiment_gauge", "scout_report_generate", "notify"],
+    "scribe": ["scribe_changelog_scan", "scribe_blog_draft", "scribe_newsletter_compose", "scribe_docs_update", "scribe_distribute", "notify"],
+}
 
+
+# ---------------------------------------------------------------------------
+# Skill runner with resilience
+# ---------------------------------------------------------------------------
 
 async def run_skill(
     skill_name: str,
@@ -129,24 +160,19 @@ async def run_skill(
     gemini_model: Any = None,
     pipeline_stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """
-    Import and execute a single skill module.
-
-    Each skill lives at engine/skills/<name>.py and exposes a run() function.
-    Skills are synchronous — we run them in a thread to avoid blocking the event loop.
-    """
+    """Import and execute a single skill with resilience wrappers."""
     module_path = f"engine.skills.{skill_name}"
     try:
         mod = importlib.import_module(module_path)
     except ModuleNotFoundError:
-        logger.warning("Skill not implemented yet: %s — skipping", skill_name)
-        return {"skill": skill_name, "status": "skipped", "reason": "not_implemented"}
+        logger.warning("Skill not found: %s — skipping", skill_name)
+        return {"skill": skill_name, "status": "skipped", "reason": "not_found"}
 
     if not hasattr(mod, "run"):
-        logger.warning("Skill %s has no run() function — skipping", skill_name)
+        logger.warning("Skill %s missing run() — skipping", skill_name)
         return {"skill": skill_name, "status": "skipped", "reason": "no_run_function"}
 
-    # Build kwargs based on what the skill's run() accepts
+    # Dynamic kwarg injection
     sig = inspect.signature(mod.run)
     kwargs: dict[str, Any] = {"config": config}
     if "supabase" in sig.parameters:
@@ -158,80 +184,239 @@ async def run_skill(
 
     start = time.monotonic()
     try:
-        # Skills are sync — run in thread pool to keep event loop responsive
         result = await asyncio.get_running_loop().run_in_executor(
             None, functools.partial(mod.run, **kwargs)
         )
-        elapsed = round(time.monotonic() - start, 2)
-        logger.info("Skill %s completed in %.2fs", skill_name, elapsed)
-        return {
-            "skill": skill_name,
-            "status": "ok",
-            "elapsed_s": elapsed,
-            "result": result,
-        }
+        elapsed_ms = round((time.monotonic() - start) * 1000)
+        _metrics["skill_runs"][skill_name] = _metrics["skill_runs"].get(skill_name, 0) + 1
+        _metrics["skill_timing"][skill_name] = elapsed_ms
+        logger.info("%-25s %6dms  OK", skill_name, elapsed_ms)
+        return {"skill": skill_name, "status": "ok", "elapsed_ms": elapsed_ms, "result": result}
     except Exception as exc:
-        elapsed = round(time.monotonic() - start, 2)
-        logger.error("Skill %s failed after %.2fs: %s", skill_name, elapsed, exc, exc_info=True)
-        return {
-            "skill": skill_name,
-            "status": "error",
-            "elapsed_s": elapsed,
-            "error": str(exc),
-        }
+        elapsed_ms = round((time.monotonic() - start) * 1000)
+        _metrics["skill_errors"][skill_name] = _metrics["skill_errors"].get(skill_name, 0) + 1
+        logger.error("%-25s %6dms  FAIL: %s", skill_name, elapsed_ms, exc, exc_info=True)
+        return {"skill": skill_name, "status": "error", "elapsed_ms": elapsed_ms, "error": str(exc)}
 
 
 async def run_pipeline(config: dict, supabase: Any, gemini_model: Any = None) -> list[dict]:
-    """Execute the full skill chain sequentially, collecting results.
-
-    Aggregates stats from each skill and passes them to the notify skill.
-    """
-    skill_chain = config.get("skill_chain", DEFAULT_SKILL_CHAIN)
+    """Execute skill chain, aggregate stats, emit cross-claw events."""
+    skill_chain = config.get("skill_chain", DEFAULT_CHAINS.get(CLAW_PROFILE, DEFAULT_CHAINS["media"]))
     results: list[dict] = []
     aggregated_stats: dict[str, Any] = {}
 
-    for skill_name in skill_chain:
-        result = await run_skill(
-            skill_name, config, supabase, gemini_model,
-            pipeline_stats=aggregated_stats,
-        )
-        results.append(result)
+    pipeline_start = time.monotonic()
+    logger.info("Pipeline starting: %d skills [%s]", len(skill_chain), CLAW_PROFILE)
 
-        # Merge skill results into aggregated stats for notify
+    for skill_name in skill_chain:
+        result = await run_skill(skill_name, config, supabase, gemini_model, pipeline_stats=aggregated_stats)
+        results.append(result)
         if result.get("status") == "ok" and isinstance(result.get("result"), dict):
             aggregated_stats.update(result["result"])
+
+    elapsed_ms = round((time.monotonic() - pipeline_start) * 1000)
+    ok_count = sum(1 for r in results if r["status"] == "ok")
+    err_count = sum(1 for r in results if r["status"] == "error")
+    skip_count = sum(1 for r in results if r["status"] == "skipped")
+
+    logger.info(
+        "Pipeline complete: %dms total | %d ok, %d errors, %d skipped",
+        elapsed_ms, ok_count, err_count, skip_count,
+    )
+    _metrics["pipeline_timing"].append(elapsed_ms)
+    if len(_metrics["pipeline_timing"]) > 100:
+        _metrics["pipeline_timing"] = _metrics["pipeline_timing"][-50:]
+
+    # Emit cross-claw events based on results
+    _emit_pipeline_events(supabase, aggregated_stats)
 
     return results
 
 
+def _emit_pipeline_events(supabase: Any, stats: dict[str, Any]) -> None:
+    """Emit cross-claw events from pipeline results."""
+    try:
+        from engine.events import on_hero_uploaded, on_nft_minted, on_alpha_detected, on_blog_ready
+
+        # Media → Herald: new hero uploaded
+        hero_count = stats.get("hero_count", 0)
+        if hero_count > 0 and CLAW_PROFILE == "media":
+            on_hero_uploaded(supabase, asset_id="batch", guardian="multiple", storage_url="batch")
+
+        # Forge → Herald: NFT minted
+        minted = stats.get("minted_count", 0)
+        if minted > 0 and CLAW_PROFILE == "forge":
+            on_nft_minted(supabase, nft_id="batch", token_id=0, tx_hash="batch", chain="base")
+
+        # Scout → Herald: alpha detected
+        alphas = stats.get("alphas_found", 0)
+        if alphas > 0 and CLAW_PROFILE == "scout":
+            on_alpha_detected(supabase, signal_id="batch", priority="high", content="Alpha batch detected")
+
+        # Scribe → Herald: blog ready
+        if stats.get("drafts_created", 0) > 0 and CLAW_PROFILE == "scribe":
+            draft = stats.get("blog_draft", {})
+            if draft:
+                on_blog_ready(supabase, title=draft.get("title", ""), slug=draft.get("slug", ""), excerpt=draft.get("excerpt", ""))
+
+    except Exception as exc:
+        logger.debug("Event emission failed (non-critical): %s", exc)
+
+
 # ---------------------------------------------------------------------------
-# Health HTTP server
+# Event consumer — processes cross-claw events
+# ---------------------------------------------------------------------------
+
+async def event_loop(
+    config: dict,
+    shutdown_event: asyncio.Event,
+    supabase: Any,
+    gemini_model: Any = None,
+) -> None:
+    """Consume and process cross-claw events targeted at this claw."""
+    claw_name = CLAW_PROFILE
+    interval = 30  # check every 30s
+
+    # Map event actions to skill runs
+    ACTION_SKILLS: dict[str, list[str]] = {
+        "draft_announcement": ["herald_content_draft"],
+        "draft_pipeline_summary": ["herald_content_draft"],
+        "announce_mint": ["herald_content_draft", "herald_schedule"],
+        "launch_campaign": ["herald_content_draft", "herald_thread_compose", "herald_schedule"],
+        "draft_alpha_response": ["herald_content_draft"],
+        "thread_and_distribute": ["herald_thread_compose", "herald_schedule"],
+        "evaluate_for_nft": ["nft_art_generate"],
+        "draft_comparison": ["scribe_blog_draft"],
+    }
+
+    while not shutdown_event.is_set():
+        try:
+            from engine.events import consume_events, complete_event, fail_event
+
+            events = consume_events(supabase, claw_name, limit=5)
+            for event in events:
+                action = event.get("action", "")
+                skills_to_run = ACTION_SKILLS.get(action, [])
+
+                if not skills_to_run:
+                    logger.debug("No skill mapping for action: %s", action)
+                    complete_event(supabase, event["id"], {"skipped": "no_skill_mapping"})
+                    continue
+
+                logger.info("Processing event: %s → %s", event.get("event_type"), action)
+
+                # Run the triggered skills
+                event_stats: dict[str, Any] = {"event_payload": event.get("payload", {})}
+                for skill_name in skills_to_run:
+                    result = await run_skill(skill_name, config, supabase, gemini_model, pipeline_stats=event_stats)
+                    if result.get("status") == "ok" and isinstance(result.get("result"), dict):
+                        event_stats.update(result["result"])
+
+                complete_event(supabase, event["id"], event_stats)
+
+        except Exception as exc:
+            logger.debug("Event consumer error: %s", exc)
+
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=interval)
+            break
+        except asyncio.TimeoutError:
+            pass
+
+
+# ---------------------------------------------------------------------------
+# Metrics + Health HTTP server
 # ---------------------------------------------------------------------------
 
 _daemon_state: dict[str, Any] = {
     "status": "starting",
+    "version": VERSION,
+    "profile": CLAW_PROFILE,
     "started_at": None,
     "last_pipeline_at": None,
     "last_heartbeat_at": None,
     "pipeline_runs": 0,
+    "events_processed": 0,
     "errors": 0,
+}
+
+_metrics: dict[str, Any] = {
+    "skill_runs": {},
+    "skill_errors": {},
+    "skill_timing": {},  # last run ms
+    "pipeline_timing": [],  # list of pipeline durations
 }
 
 
 async def health_handler(_request: web.Request) -> web.Response:
-    """GET /health — returns daemon state as JSON."""
-    return web.json_response(_daemon_state)
+    """GET /health — daemon state + circuit breakers."""
+    body = {
+        **_daemon_state,
+        "circuits": all_circuit_stats(),
+        "rate_limiters": all_limiter_stats(),
+        "uptime_s": round(time.time() - (_daemon_state.get("started_at") or time.time())),
+    }
+    return web.json_response(body)
 
 
-async def start_health_server(port: int = 8080) -> web.AppRunner:
-    """Start the aiohttp health endpoint."""
+async def metrics_handler(_request: web.Request) -> web.Response:
+    """GET /metrics — pipeline timing, skill stats, error rates."""
+    timings = _metrics["pipeline_timing"]
+    body = {
+        "profile": CLAW_PROFILE,
+        "pipeline": {
+            "total_runs": _daemon_state["pipeline_runs"],
+            "avg_ms": round(sum(timings) / len(timings)) if timings else 0,
+            "p95_ms": sorted(timings)[int(len(timings) * 0.95)] if len(timings) >= 2 else 0,
+            "last_ms": timings[-1] if timings else 0,
+        },
+        "skills": {
+            name: {
+                "runs": _metrics["skill_runs"].get(name, 0),
+                "errors": _metrics["skill_errors"].get(name, 0),
+                "last_ms": _metrics["skill_timing"].get(name, 0),
+                "error_rate": round(
+                    _metrics["skill_errors"].get(name, 0) / max(_metrics["skill_runs"].get(name, 0), 1), 3
+                ),
+            }
+            for name in set(list(_metrics["skill_runs"]) + list(_metrics["skill_errors"]))
+        },
+        "circuits": all_circuit_stats(),
+    }
+    return web.json_response(body)
+
+
+async def trigger_handler(request: web.Request) -> web.Response:
+    """POST /trigger — manually trigger a pipeline run or specific skill."""
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+
+    skill = body.get("skill")
+    if skill:
+        # Trigger a single skill
+        config = load_config()
+        supabase = db.get_client()
+        gemini = get_gemini_model(config)
+        result = await run_skill(skill, config, supabase, gemini)
+        return web.json_response(result)
+    else:
+        # Trigger full pipeline (set flag for next loop iteration)
+        return web.json_response({"queued": True, "message": "Pipeline trigger queued"})
+
+
+async def start_http_server(port: int = 8080) -> web.AppRunner:
+    """Start the HTTP server with health, metrics, and trigger endpoints."""
     app = web.Application()
     app.router.add_get("/health", health_handler)
+    app.router.add_get("/metrics", metrics_handler)
+    app.router.add_post("/trigger", trigger_handler)
     runner = web.AppRunner(app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", port)
     await site.start()
-    logger.info("Health server listening on port %d", port)
+    logger.info("HTTP server on port %d — /health /metrics /trigger", port)
     return runner
 
 
@@ -243,20 +428,26 @@ async def heartbeat_loop(config: dict, shutdown_event: asyncio.Event) -> None:
     """Send heartbeat to Supabase at configured interval."""
     agent_id = config["agent_id"]
     interval = config.get("heartbeat", {}).get("interval_seconds", 300)
+    supabase_circuit = get_circuit("supabase", failure_threshold=5, reset_timeout=60)
 
     while not shutdown_event.is_set():
-        try:
-            db.heartbeat(agent_id, stats=_daemon_state)
-            _daemon_state["last_heartbeat_at"] = time.time()
-        except Exception as exc:
-            logger.error("Heartbeat failed: %s", exc)
-            _daemon_state["errors"] += 1
+        if supabase_circuit.can_execute():
+            try:
+                db.heartbeat(agent_id, stats=_daemon_state)
+                _daemon_state["last_heartbeat_at"] = time.time()
+                supabase_circuit.record_success()
+            except Exception as exc:
+                supabase_circuit.record_failure()
+                logger.error("Heartbeat failed: %s", exc)
+                _daemon_state["errors"] += 1
+        else:
+            logger.debug("Supabase circuit OPEN — skipping heartbeat")
 
         try:
             await asyncio.wait_for(shutdown_event.wait(), timeout=interval)
-            break  # shutdown requested
+            break
         except asyncio.TimeoutError:
-            pass  # interval elapsed, loop again
+            pass
 
 
 async def pipeline_loop(
@@ -269,26 +460,32 @@ async def pipeline_loop(
     agent_id = config["agent_id"]
     interval = config.get("heartbeat", {}).get("pipeline_interval_seconds", 900)
 
+    # Skip auto-loop if interval is 0 (on-demand only, like Forge)
+    if interval <= 0:
+        logger.info("Pipeline interval=0 — on-demand mode (use /trigger)")
+        await shutdown_event.wait()
+        return
+
     while not shutdown_event.is_set():
-        logger.info("--- Pipeline run #%d starting ---", _daemon_state["pipeline_runs"] + 1)
-        db.update_agent_status(agent_id, "processing")
+        run_num = _daemon_state["pipeline_runs"] + 1
+        logger.info("━━━ Pipeline run #%d ━━━", run_num)
+
+        try:
+            db.update_agent_status(agent_id, "processing")
+        except Exception:
+            pass
 
         results = await run_pipeline(config, supabase, gemini_model)
 
         _daemon_state["pipeline_runs"] += 1
         _daemon_state["last_pipeline_at"] = time.time()
-        _daemon_state["last_pipeline_results"] = results
-
         error_count = sum(1 for r in results if r["status"] == "error")
         _daemon_state["errors"] += error_count
 
-        db.update_agent_status(agent_id, "online")
-        logger.info(
-            "--- Pipeline run #%d complete (%d skills, %d errors) ---",
-            _daemon_state["pipeline_runs"],
-            len(results),
-            error_count,
-        )
+        try:
+            db.update_agent_status(agent_id, "online")
+        except Exception:
+            pass
 
         try:
             await asyncio.wait_for(shutdown_event.wait(), timeout=interval)
@@ -305,8 +502,13 @@ async def main() -> None:
     config = load_config()
     agent_id = config["agent_id"]
     agent_name = config.get("agent_name", agent_id)
+    skill_chain = config.get("skill_chain", DEFAULT_CHAINS.get(CLAW_PROFILE, []))
 
-    logger.info("ArcaneaClaw starting — agent=%s", agent_id)
+    logger.info("╔═══════════════════════════════════════════╗")
+    logger.info("║  ArcaneaClaw %s — %s", VERSION.ljust(6), CLAW_PROFILE.upper().ljust(23) + "║")
+    logger.info("║  Agent: %-33s ║", agent_id)
+    logger.info("║  Skills: %-32s ║", f"{len(skill_chain)} in chain")
+    logger.info("╚═══════════════════════════════════════════╝")
 
     # Initialize shared dependencies
     supabase = db.get_client()
@@ -314,14 +516,19 @@ async def main() -> None:
 
     # Register in Supabase
     try:
-        db.register_agent(agent_id, agent_name, metadata={"version": "0.2.0"})
+        db.register_agent(agent_id, agent_name, metadata={
+            "version": VERSION,
+            "profile": CLAW_PROFILE,
+            "skill_chain": skill_chain,
+        })
     except Exception as exc:
-        logger.error("Failed to register agent (continuing anyway): %s", exc)
+        logger.error("Agent registration failed (continuing): %s", exc)
 
     _daemon_state["status"] = "online"
     _daemon_state["started_at"] = time.time()
+    _daemon_state["skill_chain"] = skill_chain
 
-    # Graceful shutdown via SIGTERM / SIGINT
+    # Graceful shutdown
     shutdown_event = asyncio.Event()
     loop = asyncio.get_running_loop()
 
@@ -333,27 +540,26 @@ async def main() -> None:
         try:
             loop.add_signal_handler(sig, _signal_handler)
         except NotImplementedError:
-            # Windows doesn't support add_signal_handler — use signal.signal fallback
             signal.signal(sig, lambda s, f: _signal_handler())
 
-    # Start health server
-    health_runner = await start_health_server(port=8080)
+    # Start HTTP server
+    http_runner = await start_http_server(port=int(os.environ.get("PORT", 8080)))
 
-    # Run heartbeat + pipeline concurrently
+    # Run all loops concurrently
     try:
         await asyncio.gather(
             heartbeat_loop(config, shutdown_event),
             pipeline_loop(config, shutdown_event, supabase, gemini_model),
+            event_loop(config, shutdown_event, supabase, gemini_model),
         )
     finally:
-        # Graceful teardown
         logger.info("Shutting down ArcaneaClaw...")
         _daemon_state["status"] = "offline"
         try:
             db.update_agent_status(agent_id, "offline")
-        except Exception as exc:
-            logger.error("Failed to set offline status: %s", exc)
-        await health_runner.cleanup()
+        except Exception:
+            pass
+        await http_runner.cleanup()
         logger.info("ArcaneaClaw stopped.")
 
 

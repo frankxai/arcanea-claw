@@ -116,7 +116,8 @@ def run(config: dict[str, Any], supabase: Any) -> dict[str, Any]:
 
         result = None
         if provider == "thirdweb":
-            secret = os.environ.get("THIRDWEB_SECRET_KEY", mint_cfg.get("thirdweb_secret", ""))
+            # HIGH-03: NEVER fall back to config YAML for secrets
+            secret = os.environ.get("THIRDWEB_SECRET_KEY", "")
             if secret:
                 result = _mint_thirdweb(contract_address, token_uri, recipient, secret, chain)
         elif provider == "crossmint":

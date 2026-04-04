@@ -87,12 +87,13 @@ def run(config: dict[str, Any], supabase: Any) -> dict[str, Any]:
     new_hashes: list[str] = []
 
     for scan_root in scan_paths:
-        root = Path(scan_root)
+        root = Path(scan_root).resolve()
         if not root.exists():
             logger.warning("Scan path does not exist: %s", root)
             continue
 
-        for dirpath, dirnames, filenames in os.walk(root):
+        # CRIT-05: followlinks=False prevents symlink traversal attacks
+        for dirpath, dirnames, filenames in os.walk(root, followlinks=False):
             current = Path(dirpath)
 
             # Prune ignored directories in-place

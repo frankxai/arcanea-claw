@@ -14,6 +14,13 @@ import sys
 
 _real_import = importlib.import_module
 
+# Patch security allowlist to permit test skill names
+@pytest.fixture(autouse=True)
+def _allow_test_skills():
+    """Allow arbitrary skill names in tests by patching the allowlist."""
+    with patch("engine.security.validate_skill_name", return_value=True):
+        yield
+
 
 # ---------------------------------------------------------------------------
 # Fixtures

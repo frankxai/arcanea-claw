@@ -46,6 +46,15 @@ from engine.resilience import (
     get_circuit,
     get_limiter,
 )
+from engine.security import (
+    auth_middleware,
+    check_auth_configured,
+    configure_pillow_limits,
+    install_log_redaction,
+    rate_limit_middleware,
+    safe_error_response,
+    validate_skill_name,
+)
 
 load_dotenv()
 
@@ -161,6 +170,10 @@ async def run_skill(
     pipeline_stats: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Import and execute a single skill with resilience wrappers."""
+    # CRIT-03: Validate against allowlist before importing
+    if not validate_skill_name(skill_name):
+        return {"skill": skill_name, "status": "blocked", "reason": "not_in_allowlist"}
+
     module_path = f"engine.skills.{skill_name}"
     try:
         mod = importlib.import_module(module_path)
@@ -416,7 +429,10 @@ async def metrics_handler(_request: web.Request) -> web.Response:
 
 
 async def trigger_handler(request: web.Request) -> web.Response:
-    """POST /trigger — manually trigger a pipeline run or specific skill."""
+    """POST /trigger — manually trigger a pipeline run or specific skill.
+
+    Requires CLAW_API_SECRET bearer token (enforced by auth_middleware).
+    """
     try:
         body = await request.json()
     except Exception:
@@ -424,20 +440,23 @@ async def trigger_handler(request: web.Request) -> web.Response:
 
     skill = body.get("skill")
     if skill:
-        # Trigger a single skill
+        if not validate_skill_name(skill):
+            return web.json_response({"error": f"Unknown skill: {skill}"}, status=400)
         config = load_config()
         supabase = db.get_client()
         gemini = get_gemini_model(config)
         result = await run_skill(skill, config, supabase, gemini)
+        # Sanitize error details before returning
+        if result.get("status") == "error" and "error" in result:
+            result = {**result, **safe_error_response(result["error"])}
         return web.json_response(result)
     else:
-        # Trigger full pipeline (set flag for next loop iteration)
         return web.json_response({"queued": True, "message": "Pipeline trigger queued"})
 
 
 async def start_http_server(port: int = 8080) -> web.AppRunner:
-    """Start the HTTP server with health, metrics, and trigger endpoints."""
-    app = web.Application()
+    """Start the HTTP server with security middleware."""
+    app = web.Application(middlewares=[rate_limit_middleware, auth_middleware])
     app.router.add_get("/health", health_handler)
     app.router.add_get("/metrics", metrics_handler)
     app.router.add_post("/trigger", trigger_handler)
@@ -535,6 +554,11 @@ async def main() -> None:
 
     logger.info("=== ArcaneaClaw %s | %s ===", VERSION, CLAW_PROFILE.upper())
     logger.info("Agent: %s | Skills: %d in chain", agent_id, len(skill_chain))
+
+    # Security initialization
+    configure_pillow_limits()    # HIGH-04: decompression bomb protection
+    install_log_redaction()      # MED-06: secret redaction in logs
+    check_auth_configured()      # CRIT-01: warn if no API secret
 
     # Initialize shared dependencies
     supabase = db.get_client()

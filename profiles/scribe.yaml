@@ -1,0 +1,82 @@
+arcanea_claw:
+  agent_id: "claw-scribe"
+  agent_name: "ArcaneaClaw Scribe — Content Engine"
+  agent_type: "arcanea-claw"
+
+  skill_chain:
+    - scribe_changelog_scan
+    - scribe_blog_draft
+    - scribe_newsletter_compose
+    - scribe_docs_update
+    - scribe_distribute
+    - notify
+
+  heartbeat:
+    interval_seconds: 300
+    pipeline_interval_seconds: 86400  # daily
+
+  sources:
+    github:
+      repos:
+        - "frankxai/arcanea-ai-app"
+        - "frankxai/arcanea-claw"
+        - "frankxai/arcanea"
+      since: "24h"  # look back period
+
+    notion:
+      enabled: true
+      database_id: "${NOTION_CONTENT_DB}"
+
+    linear:
+      enabled: true
+      project: "Arcanea"
+
+  content:
+    model: "gemini-2.0-flash"
+    voice: |
+      FrankX brand voice. Visionary but grounded.
+      First person when appropriate. Builder energy.
+      Technical depth with accessible language.
+      NEVER: corporate jargon, buzzword soup, empty hype.
+      Show what was built, why it matters, what's next.
+
+    templates:
+      changelog:
+        format: "markdown"
+        sections: [highlights, features, fixes, internal]
+        publish_to: ["github_release", "discord", "website"]
+
+      blog:
+        format: "mdx"
+        min_words: 500
+        max_words: 2000
+        include_images: true
+        publish_to: ["website", "linkedin", "medium"]
+
+      newsletter:
+        format: "html"
+        sections: [hero_story, shipped_this_week, community, lore_drop, coming_next]
+        publish_to: ["email", "website"]
+        schedule: "weekly"
+
+      press_release:
+        format: "markdown"
+        trigger: "milestone"  # only on major milestones
+        publish_to: ["website", "linkedin"]
+
+  distribution:
+    website:
+      api_url: "${ARCANEA_API_URL}/api/content"
+    medium:
+      token: "${MEDIUM_TOKEN}"
+    email:
+      provider: "resend"
+      api_key: "${RESEND_API_KEY}"
+      from: "frank@arcanea.ai"
+      list_id: "${RESEND_LIST_ID}"
+
+  notify:
+    enabled: true
+    channels:
+      - type: discord
+        url: "${SCRIBE_WEBHOOK_URL}"

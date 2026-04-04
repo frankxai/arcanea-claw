@@ -76,12 +76,32 @@ def get_gemini_model(config: dict) -> Any:
 # Config
 # ---------------------------------------------------------------------------
 
-CONFIG_PATH = os.environ.get("ARCANEA_CLAW_CONFIG", "/app/config.yaml")
+CLAW_PROFILE = os.environ.get("CLAW_PROFILE", "media")
+CONFIG_PATH = os.environ.get(
+    "ARCANEA_CLAW_CONFIG",
+    f"/app/profiles/{CLAW_PROFILE}.yaml" if Path(f"/app/profiles/{CLAW_PROFILE}.yaml").exists()
+    else "/app/config.yaml",
+)
 
 
 def load_config() -> dict[str, Any]:
-    """Load and return config.yaml as a dict."""
-    with open(CONFIG_PATH, "r") as f:
+    """Load config from profile or legacy config.yaml."""
+    # Try profile-based config first, fall back to legacy
+    profile_path = Path(CONFIG_PATH)
+    if not profile_path.exists():
+        # Try local profiles directory
+        local_profile = Path(__file__).resolve().parent.parent / "profiles" / f"{CLAW_PROFILE}.yaml"
+        if local_profile.exists():
+            profile_path = local_profile
+        else:
+            # Final fallback: config.yaml in cwd or /app
+            for fallback in [Path("config.yaml"), Path("config.local.yaml"), Path("/app/config.yaml")]:
+                if fallback.exists():
+                    profile_path = fallback
+                    break
+
+    logger.info("Loading config from: %s (profile=%s)", profile_path, CLAW_PROFILE)
+    with open(profile_path, "r") as f:
         raw = yaml.safe_load(f)
     return raw.get("arcanea_claw", raw)
 
@@ -90,7 +110,7 @@ def load_config() -> dict[str, Any]:
 # Skill chain — each skill is a module in /app/skills/ with a run() function
 # ---------------------------------------------------------------------------
 
-SKILL_CHAIN = [
+DEFAULT_SKILL_CHAIN = [
     "media_scan",
     "media_classify",
     "media_dedup",
@@ -166,10 +186,11 @@ async def run_pipeline(config: dict, supabase: Any, gemini_model: Any = None) ->
 
     Aggregates stats from each skill and passes them to the notify skill.
     """
+    skill_chain = config.get("skill_chain", DEFAULT_SKILL_CHAIN)
     results: list[dict] = []
     aggregated_stats: dict[str, Any] = {}
 
-    for skill_name in SKILL_CHAIN:
+    for skill_name in skill_chain:
         result = await run_skill(
             skill_name, config, supabase, gemini_model,
             pipeline_stats=aggregated_stats,

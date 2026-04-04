@@ -1,0 +1,52 @@
+arcanea_claw:
+  agent_id: "claw-media"
+  agent_name: "ArcaneaClaw Media Engine"
+  agent_type: "arcanea-claw"
+
+  skill_chain:
+    - media_scan
+    - media_classify
+    - media_dedup
+    - media_process
+    - taste_score
+    - media_upload
+    - social_prep
+    - notify
+
+  heartbeat:
+    interval_seconds: 300
+    pipeline_interval_seconds: 900
+
+  scan:
+    paths:
+      - /data/source
+    extensions: [.jpg, .jpeg, .png, .webp, .gif, .mp4, .mov]
+    ignore_patterns: [".*", "__pycache__", "node_modules", ".git"]
+
+  process:
+    staging_dir: /data/staging
+    output_dir: /data/processed
+    webp_quality: 85
+    max_dimension: 2400
+    size_variants:
+      hero: [1920, 1080]
+      gallery: [1200, 800]
+      social_square: [1080, 1080]
+      social_story: [1080, 1920]
+      social_wide: [1200, 628]
+      thumbnail: [320, 320]
+
+  upload:
+    hero_threshold: 80
+    gallery_threshold: 60
+
+  classify:
+    model: "gemini-2.0-flash"
+    guardians: [Lyssandria, Leyla, Draconia, Maylinn, Alera, Lyria, Aiyami, Elara, Ino, Shinkami]
+    elements: [Earth, Water, Fire, Wind, Void]
+
+  notify:
+    enabled: true
+    channels:
+      - type: webhook
+        url: "${NOTIFY_WEBHOOK_URL}"

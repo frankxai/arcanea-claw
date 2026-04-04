@@ -1,0 +1,94 @@
+arcanea_claw:
+  agent_id: "claw-scout"
+  agent_name: "ArcaneaClaw Scout — Intelligence Engine"
+  agent_type: "arcanea-claw"
+
+  skill_chain:
+    - scout_market_scan
+    - scout_competitor_track
+    - scout_alpha_detect
+    - scout_sentiment_gauge
+    - scout_report_generate
+    - notify
+
+  heartbeat:
+    interval_seconds: 300
+    pipeline_interval_seconds: 3600  # 1 hour
+
+  sources:
+    twitter:
+      enabled: true
+      search_queries:
+        - "AI art platform"
+        - "AI world building"
+        - "creator economy AI"
+        - "NFT AI generated"
+        - "MCP server"
+        - "claude code"
+      track_accounts:
+        - "@AnthropicAI"
+        - "@OpenAI"
+        - "@midabornejourney"
+        - "@Replicate"
+        - "@worldcoin"
+        - "@fabornearcaster"
+
+    reddit:
+      enabled: true
+      subreddits:
+        - "r/aiArt"
+        - "r/worldbuilding"
+        - "r/NFT"
+        - "r/CreatorEconomy"
+        - "r/MachineLearning"
+
+    github:
+      enabled: true
+      track_repos:
+        - "openclaw/openclaw"
+        - "anthropics/claude-code"
+        - "vercel/ai"
+      trending_topics: ["mcp", "ai-agent", "world-building"]
+
+    crypto:
+      enabled: true
+      track_collections:
+        - "pudgy-penguins"
+        - "azuki"
+        - "art-blocks"
+      track_tokens: []
+      floor_alert_threshold: 0.1  # 10% movement
+
+  analysis:
+    model: "gemini-2.0-flash"
+    sentiment_analysis: true
+    trend_detection: true
+    opportunity_scoring: true
+    daily_digest: true
+
+  competitors:
+    - name: "Character.AI"
+      domain: "character.ai"
+      track: [twitter, product_hunt, app_store]
+    - name: "WorldAnvil"
+      domain: "worldanvil.com"
+      track: [twitter, reddit]
+    - name: "Midjourney"
+      domain: "midjourney.com"
+      track: [twitter, discord]
+    - name: "NovelAI"
+      domain: "novelai.net"
+      track: [twitter, reddit]
+
+  alerts:
+    # Trigger immediate notification for high-value signals
+    viral_threshold: 1000  # engagement count
+    competitor_launch: true
+    partnership_mention: true
+    negative_sentiment_spike: true
+
+  notify:
+    enabled: true
+    channels:
+      - type: discord
+        url: "${SCOUT_WEBHOOK_URL}"

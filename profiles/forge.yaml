@@ -1,0 +1,80 @@
+arcanea_claw:
+  agent_id: "claw-forge"
+  agent_name: "ArcaneaClaw Forge — NFT Creation Engine"
+  agent_type: "arcanea-claw"
+
+  skill_chain:
+    - nft_art_generate
+    - nft_trait_compose
+    - nft_metadata_build
+    - nft_ipfs_pin
+    - nft_mint
+    - nft_marketplace_list
+    - nft_rarity_score
+    - notify
+
+  heartbeat:
+    interval_seconds: 300
+    pipeline_interval_seconds: 0  # on-demand only, no auto-loop
+
+  art:
+    provider: "comfyui"  # comfyui | replicate | local
+    comfyui_url: "${COMFYUI_URL}"
+    replicate_token: "${REPLICATE_TOKEN}"
+    style_packs:
+      - guardian_portraits
+      - sacred_gear
+      - starlight_marks
+      - gate_keys
+    default_resolution: [1024, 1024]
+    batch_size: 10
+
+  traits:
+    # Generative collection trait system
+    backgrounds: [Void Nebula, Crystal Cave, Starweave Portal, Ember Throne, Ocean Depths]
+    elements: [Fire Aura, Water Flow, Earth Crystals, Wind Wisps, Void Particles]
+    accessories: [Guardian Crown, Gate Key, Sacred Scroll, Element Orb, Starlight Mark]
+    expressions: [Fierce, Serene, Mystical, Commanding, Awakened]
+    rarity_weights:
+      common: 0.50
+      uncommon: 0.25
+      rare: 0.15
+      epic: 0.07
+      legendary: 0.03
+
+  ipfs:
+    provider: "pinata"  # pinata | nft_storage | web3_storage
+    pinata_jwt: "${PINATA_JWT}"
+    gateway: "https://arcanea.mypinata.cloud/ipfs/"
+
+  mint:
+    provider: "thirdweb"  # thirdweb | crossmint | custom
+    chain: "base"  # base | ethereum | polygon
+    contract_address: "${NFT_CONTRACT_ADDRESS}"
+    thirdweb_secret: "${THIRDWEB_SECRET_KEY}"
+
+  marketplace:
+    primary: "opensea"
+    secondary: ["magic_eden", "blur"]
+    collection_slug: "arcanea-creators"
+    royalty_bps: 500  # 5%
+
+  collections:
+    - name: "Arcanea Creators"
+      supply: 1111
+      type: "ERC-721"
+      description: "The founding collection. 1111 unique AI-generated creators."
+    - name: "Guardian Portraits"
+      supply: 10
+      type: "ERC-721"
+      description: "The 10 Guardians of Arcanea. 1/1 masterpieces."
+    - name: "Gate Keys"
+      supply: 1000
+      type: "ERC-1155"
+      description: "Unlock the Ten Gates. Utility + art."
+
+  notify:
+    enabled: true
+    channels:
+      - type: discord
+        url: "${FORGE_WEBHOOK_URL}"

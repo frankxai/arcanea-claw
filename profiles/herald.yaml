@@ -1,0 +1,83 @@
+arcanea_claw:
+  agent_id: "claw-herald"
+  agent_name: "ArcaneaClaw Herald — PR & Social Engine"
+  agent_type: "arcanea-claw"
+
+  skill_chain:
+    - herald_trend_scan
+    - herald_content_draft
+    - herald_thread_compose
+    - herald_schedule
+    - herald_cross_post
+    - herald_engage
+    - herald_analytics
+    - notify
+
+  heartbeat:
+    interval_seconds: 300
+    pipeline_interval_seconds: 1800  # 30 min
+
+  platforms:
+    twitter:
+      enabled: true
+      api_key: "${TWITTER_API_KEY}"
+      api_secret: "${TWITTER_API_SECRET}"
+      access_token: "${TWITTER_ACCESS_TOKEN}"
+      access_secret: "${TWITTER_ACCESS_SECRET}"
+      handle: "@arcanea_ai"
+      style: "mystical-founder"  # voice template
+      max_daily_posts: 8
+      max_daily_replies: 20
+
+    linkedin:
+      enabled: true
+      access_token: "${LINKEDIN_ACCESS_TOKEN}"
+      style: "thought-leader"
+      max_daily_posts: 2
+
+    discord:
+      enabled: true
+      bot_token: "${DISCORD_BOT_TOKEN}"
+      guild_id: "${DISCORD_GUILD_ID}"
+      channels:
+        announcements: "${DISCORD_ANNOUNCE_CHANNEL}"
+        gallery: "${DISCORD_GALLERY_CHANNEL}"
+
+    farcaster:
+      enabled: false
+      signer_uuid: "${FARCASTER_SIGNER}"
+
+  content:
+    model: "gemini-2.0-flash"
+    voice_guidelines: |
+      Mystical but grounded. Never cringe. Never "gm" spam.
+      Think: a wise founder who speaks with quiet authority.
+      Short sentences. Specific words. Earned emotion.
+      NEVER use: delve, tapestry, unleash, unlock, harness, journey, nestled.
+      Reference Arcanea lore naturally — Guardians, Gates, Elements.
+      Threads should educate, not hype. Show the work, not the promise.
+
+    thread_templates:
+      - "build_log"       # What we shipped this week
+      - "lore_drop"       # Canon revelation
+      - "creator_spotlight" # Community showcase
+      - "tech_deep_dive"  # How the AI works
+      - "philosophy"      # The Arcanean Code in practice
+
+  engagement:
+    auto_reply: false  # manual approval required
+    track_mentions: true
+    sentiment_threshold: 0.3  # only engage with positive/neutral
+    ignore_accounts: []  # blocklist
+
+  analytics:
+    track_impressions: true
+    track_engagement_rate: true
+    track_follower_growth: true
+    report_interval: "daily"
+
+  notify:
+    enabled: true
+    channels:
+      - type: discord
+        url: "${HERALD_WEBHOOK_URL}"

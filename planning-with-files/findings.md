@@ -76,3 +76,41 @@
 | No type hints on skill interfaces | Low | Phase 6 (SDK) |
 | Dead helper functions in supabase_client.py | Low | Anytime |
 | No integration tests (only unit) | Medium | Phase 1 |
+
+## OpenClaw Ecosystem Intelligence (2026-04-05)
+
+### F-011: ClawHavoc Security Crisis
+- **Discovery:** Jan 2026, 800+ malicious skills on ClawHub (~20% of registry). Delivered AMOS malware.
+- **Impact on us:** Publishing verified, high-quality skills from @arcanea is a competitive advantage. Post-crisis trust is low.
+- **Action:** Added security metadata to SKILL.md and clawhub.json. Container-first, permissions declared.
+
+### F-012: ClawHub Compatibility Gap
+- **Discovery:** Our SKILL.md was missing the `metadata.openclaw` block (requires.env, requires.bins, primaryEnv).
+- **Resolution:** Added full ClawHub-compatible frontmatter. Ready to submit 4 skillpacks.
+- **Ecosystem size:** 13,729 skills on ClawHub, 250K+ stars on OpenClaw.
+
+### F-013: We're Already Ahead
+- **MCP-native:** Most ClawHub skills are SKILL.md only (prompt instructions). We ship an actual MCP server with 11 tools.
+- **Pipeline architecture:** Nobody in ClawHub has a multi-skill sequential pipeline. All are single-step tools.
+- **TASTE scoring:** 5-dimension aesthetic evaluation is unique in the entire ecosystem.
+- **Fleet coordination:** 5 coordinated claws with cross-claw events. OpenClaw runs one agent. We run five.
+
+### F-014: NanoClaw Container Security Model
+- **Discovery:** NanoClaw (Anthropic Agent SDK based) uses container-level isolation for every session.
+- **Our alignment:** We already run in Docker/Podman with non-root user. Architecturally matched.
+
+### F-015: Moltbook Acquired by Meta
+- **Discovery:** "Reddit for AI agents." Meta acquired March 2026. Transitioning to walled garden.
+- **Action:** Low priority as a Herald platform. Monitor API stability post-acquisition.
+
+### F-016: Security Audit Results (5 CRITICAL fixed)
+- CRIT-01: /trigger now authenticated (CLAW_API_SECRET bearer)
+- CRIT-03: Skill allowlist enforced (33 known skills only)
+- CRIT-04: File path validation added
+- CRIT-05: media_scan followlinks=False + resolved paths
+- HIGH-01: Inbound rate limiting (30/60s per IP)
+- HIGH-03: Secret fallback to YAML removed
+- HIGH-04: Pillow MAX_IMAGE_PIXELS=50M
+- MED-01: Error sanitization on HTTP responses
+- MED-04: Dependencies pinned to exact versions
+- MED-06: Log secret redaction filter

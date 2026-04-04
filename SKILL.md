@@ -1,15 +1,14 @@
 ---
 name: arcanea-claw
-version: "0.1.0"
-description: "Complete AI-powered media processing, classification, and publishing pipeline. Scans, tags, scores, and deploys creative media with world-building intelligence."
+version: "0.3.0"
+description: "The Claw Fleet — 5 AI engines (Media, Forge, Herald, Scout, Scribe) with 33 skills, cross-claw events, and fleet orchestration for creative operations."
 author: "frankxai"
 homepage: "https://arcanea.ai/claw"
 repository: "https://github.com/frankxai/arcanea-claw"
 license: "MIT"
-tags: [media, image-processing, ai-classification, creative, world-building, publishing, mcp]
+tags: [media, image-processing, ai-classification, nft, social-media, creative, world-building, publishing, mcp, fleet]
 platforms: [openclaw, nanoclaw, claude-code, standalone]
 install:
-  - "npm install"
   - "pip install -r requirements.txt"
   - "cd mcp-server && npm install && npm run build"
 mcpServer:
@@ -18,6 +17,30 @@ mcpServer:
   env:
     CLAW_DIR: "${CLAW_DIR:-./}"
     MANIFEST_PATH: "${MANIFEST_PATH:-./manifest.json}"
+metadata:
+  openclaw:
+    requires:
+      env:
+        - SUPABASE_URL
+        - SUPABASE_SERVICE_KEY
+        - GEMINI_API_KEY
+      bins: [python3, ffmpeg]
+      anyBins: [docker, podman]
+    primaryEnv: SUPABASE_URL
+    emoji: "lobster"
+    homepage: "https://arcanea.ai/claw"
+    security:
+      sandboxed: true
+      containerOnly: true
+      permissions:
+        - network:outbound
+        - storage:supabase
+        - storage:vercel-blob
+      noPermissions:
+        - shell:execute
+        - filesystem:write-outside-data
+    verified: true
+    publisher: "@arcanea"
 ---
 
 # ArcaneaClaw -- Creator Media Engine

@@ -1,8 +1,8 @@
 {
   "name": "@arcanea/claw",
-  "display_name": "ArcaneaClaw -- Creator Media Engine",
-  "description": "AI-powered media pipeline: scan, classify, score, process, upload, social. 8 skills, 11 MCP tools. Works standalone, with OpenClaw, or as MCP tools for Claude Code.",
-  "long_description": "Complete media processing pipeline for creative world-builders. Scans directories for images/video/audio, classifies by character and element using heuristics and AI vision, scores aesthetic quality (0-100) across 5 dimensions with Gemini Vision, resizes to 6 platform-optimized variants, uploads hero-tier assets to Vercel Blob and gallery-tier to Supabase Storage, and generates social media posts with AI captions and hashtags.",
+  "display_name": "ArcaneaClaw — The Claw Fleet",
+  "description": "5 AI engines (Media, Forge, Herald, Scout, Scribe) with 33 skills, cross-claw event pipeline, Maestro orchestrator. MCP-native, container-first.",
+  "long_description": "The Claw Fleet is a self-orchestrating AI operations engine for creators. Media Claw scans, classifies, and scores art using TASTE (5-dimension aesthetic evaluation via Gemini Vision). Forge Claw generates, composes, and mints NFTs. Herald Claw manages social media presence with AI-drafted content. Scout Claw monitors markets and competitors. Scribe Claw auto-generates changelogs, blogs, and newsletters. All 5 claws share a Supabase brain and trigger each other through cross-claw events. Maestro evaluates declarative YAML strategies to orchestrate multi-claw workflows.",
   "category": "media",
   "subcategory": "image-processing",
   "author": {
@@ -11,7 +11,7 @@
     "avatar": "https://arcanea.ai/og-image.png",
     "github": "https://github.com/frankxai"
   },
-  "version": "0.1.0",
+  "version": "0.3.0",
   "license": "MIT",
   "homepage": "https://arcanea.ai/claw",
   "repository": "https://github.com/frankxai/arcanea-claw",
@@ -41,13 +41,16 @@
     }
   },
   "skills": [
-    "media-scan",
-    "media-classify",
-    "taste-score",
-    "media-dedup",
-    "media-process",
-    "media-upload",
-    "social-prep",
+    "media-scan", "media-classify", "taste-score", "media-dedup",
+    "media-process", "media-upload", "social-prep",
+    "nft-art-generate", "nft-trait-compose", "nft-metadata-build",
+    "nft-ipfs-pin", "nft-mint", "nft-marketplace-list", "nft-rarity-score",
+    "herald-trend-scan", "herald-content-draft", "herald-thread-compose",
+    "herald-schedule", "herald-cross-post", "herald-engage", "herald-analytics",
+    "scout-market-scan", "scout-competitor-track", "scout-alpha-detect",
+    "scout-sentiment-gauge", "scout-report-generate",
+    "scribe-changelog-scan", "scribe-blog-draft", "scribe-newsletter-compose",
+    "scribe-docs-update", "scribe-distribute",
     "notify"
   ],
   "mcp": {
@@ -59,8 +62,16 @@
   "screenshots": [],
   "install_count": 0,
   "rating": null,
-  "badges": ["mcp-native", "ai-powered", "multi-platform"],
+  "badges": ["mcp-native", "ai-powered", "multi-platform", "container-first", "verified-publisher"],
+  "security": {
+    "sandboxed": true,
+    "container_required": true,
+    "permissions_declared": true,
+    "no_shell_execution": true,
+    "verified_publisher": "@arcanea"
+  },
   "changelog": {
-    "0.1.0": "Initial release: 8 skills, 11 MCP tools, OpenClaw/NanoClaw/Claude Code support"
+    "0.1.0": "Initial release: 8 skills, 11 MCP tools, OpenClaw/NanoClaw/Claude Code support",
+    "0.3.0": "Claw Fleet: 5 engines, 33 skills, Maestro orchestrator, security hardening, LLM abstraction"
   }
 }

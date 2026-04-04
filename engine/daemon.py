@@ -289,6 +289,15 @@ async def event_loop(
         "draft_comparison": ["scribe_blog_draft"],
     }
 
+    # Initialize Maestro strategies
+    try:
+        from engine.maestro import load_strategies, process_event, get_actions_for_strategy
+        load_strategies(config)
+        maestro_enabled = True
+    except Exception as exc:
+        logger.warning("Maestro init failed: %s", exc)
+        maestro_enabled = False
+
     while not shutdown_event.is_set():
         try:
             from engine.events import consume_events, complete_event, fail_event
@@ -298,12 +307,24 @@ async def event_loop(
                 action = event.get("action", "")
                 skills_to_run = ACTION_SKILLS.get(action, [])
 
+                # Feed event to Maestro for strategy evaluation
+                if maestro_enabled:
+                    triggered_strategies = process_event(event)
+                    for strategy in triggered_strategies:
+                        logger.info("Maestro strategy fired: %s", strategy["name"])
+                        strategy_actions = get_actions_for_strategy(strategy)
+                        for sa in strategy_actions:
+                            skill_name = sa.get("skill", "")
+                            if skill_name and skill_name not in skills_to_run:
+                                skills_to_run.append(skill_name)
+                        _daemon_state["events_processed"] += 1
+
                 if not skills_to_run:
-                    logger.debug("No skill mapping for action: %s", action)
                     complete_event(supabase, event["id"], {"skipped": "no_skill_mapping"})
                     continue
 
-                logger.info("Processing event: %s → %s", event.get("event_type"), action)
+                logger.info("Processing event: %s -> %s (%d skills)",
+                           event.get("event_type"), action, len(skills_to_run))
 
                 # Run the triggered skills
                 event_stats: dict[str, Any] = {"event_payload": event.get("payload", {})}
@@ -362,6 +383,13 @@ async def health_handler(_request: web.Request) -> web.Response:
 async def metrics_handler(_request: web.Request) -> web.Response:
     """GET /metrics — pipeline timing, skill stats, error rates."""
     timings = _metrics["pipeline_timing"]
+    # Maestro strategy stats
+    try:
+        from engine.maestro import get_tracker_stats
+        maestro_stats = get_tracker_stats()
+    except Exception:
+        maestro_stats = {}
+
     body = {
         "profile": CLAW_PROFILE,
         "pipeline": {
@@ -382,6 +410,7 @@ async def metrics_handler(_request: web.Request) -> web.Response:
             for name in set(list(_metrics["skill_runs"]) + list(_metrics["skill_errors"]))
         },
         "circuits": all_circuit_stats(),
+        "maestro": maestro_stats,
     }
     return web.json_response(body)
 

@@ -1,0 +1,18 @@
+# Content Week Strategy
+# Every Monday: Scribe drafts 5 posts, Herald schedules them across the week
+name: content_week
+description: "Weekly content production cycle — automated blog + social calendar"
+trigger:
+  event_type: "scribe.blog_ready"
+  accumulate: 1
+  conditions: {}
+actions:
+  - skill: herald_content_draft
+    params:
+      topic: "Weekly content from latest blog — extract 5 social posts"
+  - skill: herald_thread_compose
+    params:
+      template: "build_log"
+  - skill: herald_schedule
+    params: {}
+cooldown_seconds: 604800  # once per week

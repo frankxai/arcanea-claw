@@ -1,0 +1,20 @@
+arcanea_claw:
+  agent_id: "claw-maestro"
+  agent_name: "ArcaneaClaw Maestro — Fleet Orchestrator"
+  agent_type: "arcanea-claw"
+
+  # Maestro has NO skill chain — it only processes events
+  skill_chain: []
+
+  heartbeat:
+    interval_seconds: 60
+    pipeline_interval_seconds: 0  # no pipeline, pure event-driven
+
+  # Maestro-specific: strategy evaluation interval
+  event_poll_interval: 15  # check for events every 15s
+
+  notify:
+    enabled: true
+    channels:
+      - type: discord
+        url: "${MAESTRO_WEBHOOK_URL}"

@@ -1,0 +1,21 @@
+# NFT Launch Strategy
+# When a collection is fully minted: announce everywhere + start monitoring
+name: nft_launch_campaign
+description: "Full NFT launch sequence — announcement blitz + floor monitoring"
+trigger:
+  event_type: "forge.collection_complete"
+  accumulate: 1
+  conditions: {}
+actions:
+  - skill: herald_content_draft
+    params:
+      topic: "NFT collection launch — minted and live on marketplace"
+  - skill: herald_thread_compose
+    params:
+      template: "tech_deep_dive"
+  - skill: herald_schedule
+    params: {}
+  - skill: scout_market_scan
+    params:
+      focus: "nft_floor_tracking"
+cooldown_seconds: 86400  # once per day during launch

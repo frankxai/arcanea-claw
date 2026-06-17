@@ -11,6 +11,10 @@
 
 ArcaneaClaw is a containerized daemon that watches source directories for new media files and runs them through an 8-skill processing pipeline: scan, AI classify (Gemini), deduplicate (perceptual hashing), process (resize/convert to WebP), aesthetic score (TASTE), upload (Supabase Storage + Vercel Blob), generate social variants, and notify (Discord/Slack webhooks). It runs on 2GB RAM, reports health via HTTP, and registers itself in Supabase so the Command Center dashboard can monitor it remotely.
 
+## Living World Engine Alignment
+
+For Arcanea world projects, Claw is an asset-processing companion, not canon storage. The canonical world remains the repo managed by `@arcanea/world-sdk`; Claw can classify and prepare covers, portraits, scenes, and social variants, then hand back repo-ready asset paths and metadata. Do not write lore or character state directly from Claw. Memory/evolution should flow through `arcanea-world remember` and `arcanea-world evolve`, with Supabase/Vercel storage used only as derived media infrastructure.
+
 ## Architecture
 
 ```

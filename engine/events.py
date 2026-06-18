@@ -13,6 +13,7 @@ Event flow:
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -70,10 +71,11 @@ def emit_event(
     source_claw: str,
     payload: dict[str, Any],
 ) -> bool:
-    """Emit a cross-claw event to Supabase.
+    """Emit a cross-claw event to Supabase and publish to Hermes broker.
 
     Events are stored in the claw_events table and picked up by
-    the target claw's event watcher.
+    the target claw's event watcher, as well as broadcast in real-time
+    on the Hermes event bus.
     """
     trigger = EVENT_TRIGGERS.get(event_type)
     if not trigger:
@@ -90,6 +92,19 @@ def emit_event(
         "emitted_at": datetime.now(timezone.utc).isoformat(),
     }
 
+    # Publish to Hermes TCP Bus
+    try:
+        from engine.hermes import get_client
+        client = get_client()
+        try:
+            loop = asyncio.get_running_loop()
+            if loop.is_running():
+                loop.create_task(client.publish(event_type, event))
+        except RuntimeError:
+            pass
+    except Exception as exc:
+        logger.warning("Failed to publish event %s to Hermes: %s", event_type, exc)
+
     try:
         supabase.table("claw_events").insert(event).execute()
         logger.info(
@@ -98,7 +113,7 @@ def emit_event(
         )
         return True
     except Exception as exc:
-        logger.warning("Failed to emit event %s: %s", event_type, exc)
+        logger.warning("Failed to emit event %s to Supabase: %s", event_type, exc)
         return False
 
 

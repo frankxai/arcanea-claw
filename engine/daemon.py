@@ -359,6 +359,108 @@ async def event_loop(
 
 
 # ---------------------------------------------------------------------------
+# Hermes message bus event consumer
+# ---------------------------------------------------------------------------
+
+async def hermes_loop(
+    config: dict,
+    shutdown_event: asyncio.Event,
+    supabase: Any,
+    gemini_model: Any = None,
+) -> None:
+    """Real-time event processing loop via Hermes TCP Message Bus."""
+    # Only load if config does not disable it
+    if config.get("hermes", {}).get("enabled", True) is False:
+        logger.info("Hermes client disabled in config")
+        return
+
+    from engine.hermes import get_client
+    from engine.events import EVENT_TRIGGERS, complete_event
+    
+    # Map event actions to skill runs
+    ACTION_SKILLS: dict[str, list[str]] = {
+        "draft_announcement": ["herald_content_draft"],
+        "draft_pipeline_summary": ["herald_content_draft"],
+        "announce_mint": ["herald_content_draft", "herald_schedule"],
+        "launch_campaign": ["herald_content_draft", "herald_thread_compose", "herald_schedule"],
+        "draft_alpha_response": ["herald_content_draft"],
+        "thread_and_distribute": ["herald_thread_compose", "herald_schedule"],
+        "evaluate_for_nft": ["nft_art_generate"],
+        "draft_comparison": ["scribe_blog_draft"],
+    }
+
+    # Initialize Maestro strategies
+    try:
+        from engine.maestro import process_event, get_actions_for_strategy
+        maestro_enabled = True
+    except Exception as exc:
+        logger.warning("Maestro init failed for Hermes loop: %s", exc)
+        maestro_enabled = False
+
+    claw_name = CLAW_PROFILE
+    client = get_client(
+        host=config.get("hermes", {}).get("host", "127.0.0.1"),
+        port=config.get("hermes", {}).get("port", 8520)
+    )
+
+    async def event_handler(message: dict[str, Any]) -> None:
+        event = message.get("payload", {})
+        event_id = event.get("id")
+        action = event.get("action", "")
+        skills_to_run = list(ACTION_SKILLS.get(action, []))
+
+        # Check-and-set status to prevent duplicate execution with Supabase polling
+        if event_id:
+            try:
+                resp = supabase.table("claw_events").update({"status": "processing"}).eq("id", event_id).eq("status", "pending").execute()
+                if not resp.data:
+                    logger.debug("Hermes event %s already processed/processing, skipping", event_id)
+                    return
+            except Exception as exc:
+                logger.warning("Failed to atomically mark event %s as processing: %s", event_id, exc)
+
+        # Feed event to Maestro for strategy evaluation
+        if maestro_enabled:
+            triggered_strategies = process_event(event)
+            for strategy in triggered_strategies:
+                logger.info("Maestro strategy fired via Hermes: %s", strategy["name"])
+                strategy_actions = get_actions_for_strategy(strategy)
+                for sa in strategy_actions:
+                    skill_name = sa.get("skill", "")
+                    if skill_name and skill_name not in skills_to_run:
+                        skills_to_run.append(skill_name)
+                _daemon_state["events_processed"] += 1
+
+        if not skills_to_run:
+            if event_id:
+                complete_event(supabase, event_id, {"skipped": "no_skill_mapping"})
+            return
+
+        logger.info("Processing Hermes event: %s -> %s (%d skills)",
+                    event.get("event_type"), action, len(skills_to_run))
+
+        # Run the triggered skills
+        event_stats: dict[str, Any] = {"event_payload": event.get("payload", {})}
+        for skill_name in skills_to_run:
+            result = await run_skill(skill_name, config, supabase, gemini_model, pipeline_stats=event_stats)
+            if result.get("status") == "ok" and isinstance(result.get("result"), dict):
+                event_stats.update(result["result"])
+
+        if event_id:
+            complete_event(supabase, event_id, event_stats)
+        _daemon_state["events_processed"] += 1
+
+    # Subscribe to matching events
+    for event_type, trigger in EVENT_TRIGGERS.items():
+        if trigger["target_claw"] == claw_name:
+            await client.subscribe(event_type, event_handler)
+
+    # Start listen loop
+    client.agent_id = f"{config['agent_id']}-hermes"
+    await client.listen_loop(shutdown_event)
+
+
+# ---------------------------------------------------------------------------
 # Metrics + Health HTTP server
 # ---------------------------------------------------------------------------
 
@@ -601,6 +703,7 @@ async def main() -> None:
             heartbeat_loop(config, shutdown_event),
             pipeline_loop(config, shutdown_event, supabase, gemini_model),
             event_loop(config, shutdown_event, supabase, gemini_model),
+            hermes_loop(config, shutdown_event, supabase, gemini_model),
         )
     finally:
         logger.info("Shutting down ArcaneaClaw...")
